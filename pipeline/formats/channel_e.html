@@ -1,0 +1,241 @@
+<!doctype html>
+<!--
+  영상 프레임 렌더러 — 「건규채널 e」 버전.
+
+  지식채널e 를 정면으로 벤치마킹한다. 앞의 두 버전과 가장 크게 다른 점:
+
+    · 가운데 정렬. 한 화면에 들어가는 글자 수를 확 줄인다
+    · 브랜드 카드로 열고 닫는다 (채널 로고)
+    · 질문을 먼저 던지고 답을 미룬다
+    · 장(章)을 "하나 · 둘 · 셋" 으로 센다
+    · 사진은 배경으로 아주 낮게 깔거나 아예 쓰지 않는다 — 글자가 주인공
+
+  build.py 가 window.renderFrame(scene, t) 를 호출한 뒤 스크린샷을 찍는다.
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>frame ch</title>
+<style>
+:root{
+  --bg:#000000;
+  --fg:#FFFFFF;
+  --dim:#9CA3AF;
+  --faint:#5A6070;
+  --amber:#FBBF24;
+  --red:#F87171;
+  --emerald:#34D399;
+  --font:"Pretendard Variable", Pretendard, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1920px;height:1080px;overflow:hidden;background:var(--bg)}
+body{font-family:var(--font);color:var(--fg);-webkit-font-smoothing:antialiased}
+#stage{position:relative;width:1920px;height:1080px;overflow:hidden;background:#000}
+
+#grain{position:absolute;inset:0;pointer-events:none;opacity:.045;mix-blend-mode:screen;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>")}
+#vig{position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0) 38%, rgba(0,0,0,.78) 100%)}
+
+/* 배경 사진은 아주 낮게 — 이 버전에서 주인공은 글자다 */
+.bg{position:absolute;inset:0;overflow:hidden}
+.bg img{width:1920px;height:1080px;object-fit:cover;display:block;
+  filter:saturate(.35) contrast(1.1) brightness(.4)}
+.bg::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.42)}
+
+/* 가운데 정렬 공통 */
+.mid{position:absolute;left:0;width:1920px;text-align:center}
+
+/* 브랜드 카드 */
+.brand{letter-spacing:-2px;font-weight:800}
+.brand .k{font-size:118px;color:var(--fg)}
+.brand .e{display:inline-block;margin-left:22px;font-size:118px;color:var(--amber)}
+.brand .tag{margin-top:34px;font-size:34px;font-weight:600;color:var(--faint);letter-spacing:8px}
+
+.dl{display:flex;align-items:baseline;justify-content:center;gap:30px}
+.dl .d{font-size:146px;font-weight:800;letter-spacing:-4px;line-height:1}
+.dl .p{font-size:58px;font-weight:700;color:var(--dim)}
+
+/* 장 구분 — 하나 · 둘 · 셋 */
+/* 날짜 — 가운데 정렬 */
+.dl{display:flex;align-items:baseline;justify-content:center;gap:30px}
+.dl .d{font-size:146px;font-weight:800;letter-spacing:-4px;line-height:1;color:var(--fg)}
+.dl .p{font-size:58px;font-weight:700;color:var(--dim)}
+
+.chap .no{font-size:150px;font-weight:800;line-height:1;color:var(--fg);letter-spacing:-4px}
+.chap .rule{width:120px;height:4px;background:var(--amber);margin:38px auto 0;border-radius:3px}
+.chap .ti{margin-top:36px;font-size:52px;font-weight:600;color:var(--dim)}
+
+/* 본문 한 줄 */
+.say{font-size:76px;font-weight:700;line-height:1.46;letter-spacing:-1px}
+.say .d2{display:block;margin-top:10px;font-weight:500;color:var(--dim);font-size:62px}
+.say b{font-weight:800}
+.say b.red{color:var(--red)} .say b.amber{color:var(--amber)} .say b.emerald{color:var(--emerald)}
+.say w{display:inline-block;white-space:pre}
+
+/* 질문 */
+.ask{font-size:72px;font-weight:600;line-height:1.5;color:var(--fg)}
+.ask .q{display:block;margin-bottom:30px;font-size:34px;font-weight:700;
+  color:var(--amber);letter-spacing:10px}
+
+/* 숫자 */
+.big .pre{font-size:42px;font-weight:500;color:var(--dim);margin-bottom:20px}
+.big .v{font-size:270px;font-weight:800;letter-spacing:-10px;line-height:.92}
+.big .v .u{font-size:84px;font-weight:700;letter-spacing:0;margin-left:16px;color:var(--amber)}
+.big .post{font-size:48px;font-weight:700;margin-top:26px}
+
+/* 인용 */
+.quote{font-size:82px;font-weight:800;line-height:1.42;letter-spacing:-1px}
+.quote .who{display:block;margin-top:34px;font-size:34px;font-weight:600;color:var(--faint)}
+
+.cap{position:absolute;left:0;width:1920px;text-align:center;
+  font-size:26px;font-weight:500;color:var(--faint)}
+
+/* 우하단 채널 마크 — 지식채널e 처럼 화면에 상시로 작게 */
+.mark{position:absolute;right:76px;bottom:62px;font-size:26px;font-weight:700;
+  color:#4A505E;letter-spacing:1px}
+.mark i{font-style:normal;color:var(--amber);margin-left:6px}
+</style>
+</head>
+<body>
+<div id="stage"><div id="content"></div><div id="vig"></div><div id="grain"></div></div>
+
+<script>
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function ease(x){x=clamp(x,0,1);return 1-Math.pow(1-x,3)}
+function appear(t,s,d){return ease((t-s)/(d||0.55))}
+function rise(t,s,d,px){var p=appear(t,s,d);
+  return 'opacity:'+p.toFixed(4)+';transform:translateY('+((1-p)*(px===undefined?18:px)).toFixed(2)+'px)'}
+function esc(s){return (s===undefined||s===null)?'':String(s)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+// 단어가 하나씩 차오른다
+function words(text,t,start,strong,accent){
+  if(!text) return '';
+  var ps=String(text).split(' '), out='', step=0.1;
+  for(var i=0;i<ps.length;i++){
+    var p=appear(t,start+i*step,0.45);
+    var hit = strong && strong.indexOf(ps[i].replace(/[.,?”“]/g,''))>=0;
+    var inner=esc(ps[i])+(i<ps.length-1?' ':'');
+    if(hit) inner='<b'+(accent&&accent!=='white'?' class="'+esc(accent)+'"':'')+'>'+inner+'</b>';
+    out+='<w style="opacity:'+p.toFixed(3)+';transform:translateY('+((1-p)*12).toFixed(2)+'px)">'+inner+'</w>';
+  }
+  return out;
+}
+function strongOf(sc){return sc.em?String(sc.em).split(' ').map(function(x){return x.replace(/[.,?”“]/g,'')}):[]}
+
+function bg(sc,t){
+  if(!sc.image) return '';
+  var z=(1.05+t*0.007).toFixed(4);
+  var f=(sc.image_focus===undefined?45:sc.image_focus);
+  return '<div class="bg" style="opacity:'+appear(t,0,1.3).toFixed(3)+'">'
+       + '<img src="assets/'+esc(sc.image)+'" style="object-position:50% '+f+'%;transform:scale('+z+')"></div>';
+}
+function mark(sc){
+  return sc.no_mark?'':'<div class="mark">건규채널<i>e</i></div>';
+}
+
+var LAYOUT={
+  // 채널 로고 카드
+  brand:function(sc,t){
+    var h=bg(sc,t);
+    h+='<div class="mid brand" style="top:430px">';
+    h+='<div><span class="k" style="'+rise(t,0.15,0.9,24)+';display:inline-block">건규채널</span>'
+      +'<span class="e" style="opacity:'+appear(t,0.8,0.7).toFixed(3)
+      +';transform:scale('+(0.8+0.2*appear(t,0.8,0.7)).toFixed(3)+')">e</span></div>';
+    if(sc.tag) h+='<div class="tag" style="'+rise(t,1.3,0.8,12)+'">'+esc(sc.tag)+'</div>';
+    h+='</div>';
+    return h;
+  },
+
+  // 날짜 — 가운데 정렬
+  dateline:function(sc,t){
+    var h=bg(sc,t);
+    h+='<div class="mid" style="top:452px"><div class="dl" style="'+rise(t,0.12,0.9,26)+'">'
+      +'<span class="d">'+esc(sc.big)+'</span>'
+      +'<span class="p" style="opacity:'+appear(t,0.55,0.7).toFixed(3)+'">'+esc(sc.place)+'</span>'
+      +'</div></div>';
+    if(sc.caption) h+='<div class="cap" style="top:660px;opacity:'+(appear(t,1.3,0.8)*0.9).toFixed(3)+'">'+esc(sc.caption)+'</div>';
+    return h+mark(sc);
+  },
+
+  // 하나 · 둘 · 셋
+  chapter:function(sc,t){
+    var h=bg(sc,t);
+    h+='<div class="mid chap" style="top:372px">';
+    h+='<div class="no" style="'+rise(t,0.12,0.85,26)+'">'+esc(sc.no)+'</div>';
+    h+='<div class="rule" style="opacity:'+appear(t,0.7,0.6).toFixed(3)
+      +';transform:scaleX('+appear(t,0.7,0.8).toFixed(3)+')"></div>';
+    if(sc.title) h+='<div class="ti" style="'+rise(t,1.0,0.8,14)+'">'+esc(sc.title)+'</div>';
+    h+='</div>'+mark(sc);
+    return h;
+  },
+
+  // 본문 한 줄 (가운데)
+  say:function(sc,t){
+    var h=bg(sc,t);
+    var text=(sc.pre||'')+(sc.em||'')+(sc.post||'');
+    h+='<div class="mid say" style="top:'+(sc.sub?404:446)+'px;padding:0 240px">';
+    h+=words(text,t,0.14,strongOf(sc),sc.accent);
+    if(sc.sub) h+='<span class="d2">'+words(sc.sub,t,0.14+text.split(' ').length*0.1+0.3,[],null)+'</span>';
+    h+='</div>';
+    if(sc.caption) h+='<div class="cap" style="top:'+(sc.sub?752:700)+'px;opacity:'
+      +(appear(t,1.6,0.8)*0.9).toFixed(3)+'">'+esc(sc.caption)+'</div>';
+    return h+mark(sc);
+  },
+
+  // 질문 던지기
+  ask:function(sc,t){
+    var h=bg(sc,t);
+    h+='<div class="mid ask" style="top:400px;padding:0 260px">';
+    h+='<span class="q" style="'+rise(t,0.1,0.6,10)+'">'+esc(sc.label||'질문')+'</span>';
+    h+=words(sc.text,t,0.5,[],null);
+    h+='</div>';
+    return h+mark(sc);
+  },
+
+  // 큰 숫자
+  big:function(sc,t){
+    var h=bg(sc,t);
+    h+='<div class="mid big" style="top:338px">';
+    if(sc.pre) h+='<div class="pre" style="'+rise(t,0.12,0.6,12)+'">'+esc(sc.pre)+'</div>';
+    var p=appear(t,0.5,0.8);
+    h+='<div class="v" style="opacity:'+p.toFixed(4)+';transform:scale('+(0.9+0.1*p).toFixed(4)+')">'
+      +esc(sc.value)+'<span class="u">'+esc(sc.unit)+'</span></div>';
+    if(sc.post) h+='<div class="post" style="'+rise(t,1.15,0.7,14)+'">'+esc(sc.post)+'</div>';
+    h+='</div>';
+    if(sc.caption) h+='<div class="cap" style="top:800px;opacity:'+(appear(t,1.7,0.8)*0.9).toFixed(3)+'">'+esc(sc.caption)+'</div>';
+    return h+mark(sc);
+  },
+
+  // 인용
+  quote:function(sc,t){
+    var h=bg(sc,t);
+    h+='<div class="mid quote" style="top:410px;padding:0 240px">';
+    h+=words(sc.text,t,0.18,[],null);
+    if(sc.who) h+='<span class="who" style="'+rise(t,1.3,0.8,12)+'">'+esc(sc.who)+'</span>';
+    h+='</div>';
+    return h+mark(sc);
+  },
+
+  // 숨 고르기
+  breath:function(sc,t){
+    return '<div class="mid" style="top:510px;font-size:38px;font-weight:600;color:var(--faint);letter-spacing:4px;opacity:'
+      +(appear(t,0.3,1.0)*0.85).toFixed(3)+'">'+esc(sc.small)+'</div>'+mark(sc);
+  }
+};
+
+window.renderFrame=function(sc,t,fadeIn,fadeOut){
+  var fn=LAYOUT[sc.layout];
+  if(!fn) throw new Error('unknown layout: '+sc.layout);
+  document.getElementById('content').innerHTML=fn(sc,t);
+  var o=1;
+  if(fadeIn>0)  o=Math.min(o, ease(t/fadeIn));
+  if(fadeOut>0) o=Math.min(o, ease((sc.__dur-t)/fadeOut));
+  document.getElementById('stage').style.opacity=o.toFixed(4);
+  return true;
+};
+window.__ready=true;
+</script>
+</body>
+</html>

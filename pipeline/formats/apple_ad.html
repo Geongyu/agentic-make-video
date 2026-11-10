@@ -1,0 +1,161 @@
+<!doctype html>
+<!--
+  프레임 렌더러 — 예전 아이폰 광고풍.
+
+  앞의 두 포맷과 정반대다.
+    · 흰 배경. 제품 또는 단어 하나가 가운데
+    · 한 화면에 한 단어, 많아야 한 구절
+    · 설명하지 않는다. 자막을 깔지 않는다
+    · 모션은 아주 느리고 부드럽다 (ease-in-out, 긴 페이드)
+    · 여백이 내용이다 — 화면의 60% 이상이 비어 있어야 한다
+
+  layout: word / phrase / product / spec / logo / blackout
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>frame apple</title>
+<style>
+:root{
+  --bg:#FFFFFF;
+  --ink:#1D1D1F;
+  --dim:#6E6E73;
+  --faint:#A1A1A6;
+  --accent:#0071E3;
+  --font:"Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+         "SF Pro Display", "Segoe UI", "Malgun Gothic", sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1920px;height:1080px;overflow:hidden;background:var(--bg)}
+body{font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased}
+#stage{position:relative;width:1920px;height:1080px;overflow:hidden;background:var(--bg)}
+#stage.dark{background:#000;color:#fff}
+
+.mid{position:absolute;left:0;width:1920px;text-align:center}
+
+/* 단어 하나 — 이 포맷의 기본 단위 */
+.word{font-size:168px;font-weight:700;letter-spacing:-5px;line-height:1.05}
+.word .sub{display:block;margin-top:28px;font-size:46px;font-weight:500;
+  color:var(--dim);letter-spacing:-0.5px}
+
+/* 짧은 구절 */
+.phrase{font-size:96px;font-weight:600;letter-spacing:-2.5px;line-height:1.28;
+  padding:0 300px}
+
+/* 제품 사진 — 가운데, 여백 넉넉히 */
+.product{position:absolute;left:50%;transform:translateX(-50%);overflow:hidden}
+.product img{width:100%;height:100%;object-fit:contain;display:block}
+
+/* 숫자 한 줄 */
+.spec{display:flex;align-items:baseline;justify-content:center;gap:16px}
+.spec .v{font-size:200px;font-weight:700;letter-spacing:-7px;line-height:1}
+.spec .u{font-size:62px;font-weight:600;color:var(--dim)}
+.spec-note{margin-top:22px;font-size:40px;font-weight:500;color:var(--dim)}
+
+/* 마무리 */
+.logo{font-size:120px;font-weight:700;letter-spacing:-4px}
+.logo .tag{display:block;margin-top:26px;font-size:40px;font-weight:500;color:var(--dim)}
+
+.cap{position:absolute;left:0;width:1920px;text-align:center;
+  font-size:24px;font-weight:500;color:var(--faint)}
+</style>
+</head>
+<body>
+<div id="stage"><div id="content"></div></div>
+
+<script>
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+// 이 포맷은 ease-out 이 아니라 ease-in-out 이다. 광고 특유의 느린 호흡.
+function easeInOut(x){x=clamp(x,0,1);return x<0.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2}
+function appear(t,s,d){return easeInOut((t-s)/(d||0.9))}
+function esc(s){return (s===undefined||s===null)?'':String(s)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+// 아주 작게 떠오르며 나타난다. 과하면 광고 느낌이 깨진다.
+function lift(t,s,d,px){
+  var p=appear(t,s,d);
+  return 'opacity:'+p.toFixed(4)+';transform:translateY('+((1-p)*(px===undefined?14:px)).toFixed(2)+'px)';
+}
+
+function productImg(sc,t){
+  if(!sc.image) return '';
+  var p=appear(t,0.1,0.9);
+  // 아주 느린 확대 — 정지 사진이 숨 쉬게
+  var z=(1.0+t*0.004).toFixed(4);
+  var w=sc.product_w||760, h=sc.product_h||640;
+  var top=sc.product_y||(sc.word||sc.phrase?170:(1080-h)/2);
+  return '<div class="product" style="top:'+top+'px;width:'+w+'px;height:'+h+'px;'
+       + 'opacity:'+p.toFixed(3)+';transform:translateX(-50%) scale('+z+')">'
+       + '<img src="../../assets/'+esc(sc.image)+'"></div>';
+}
+
+var LAYOUT={
+  // 단어 하나
+  word:function(sc,t){
+    var h=productImg(sc,t);
+    h+='<div class="mid word" style="top:'+(sc.image?860:450)+'px;'+lift(t,0.18,0.75,18)+'">'
+      + esc(sc.text);
+    if(sc.sub) h+='<span class="sub" style="'+lift(t,0.7,0.65,10)+'">'+esc(sc.sub)+'</span>';
+    h+='</div>';
+    return h;
+  },
+
+  // 짧은 구절
+  phrase:function(sc,t){
+    var h=productImg(sc,t);
+    h+='<div class="mid phrase" style="top:'+(sc.image?840:440)+'px;'+lift(t,0.18,0.8,18)+'">'
+      + esc(sc.text)+'</div>';
+    if(sc.caption) h+='<div class="cap" style="top:900px;opacity:'
+      +(appear(t,1.1,0.7)*0.9).toFixed(3)+'">'+esc(sc.caption)+'</div>';
+    return h;
+  },
+
+  // 제품만
+  product:function(sc,t){
+    return productImg(sc,t);
+  },
+
+  // 숫자
+  spec:function(sc,t){
+    var h=productImg(sc,t);
+    h+='<div class="mid" style="top:'+(sc.image?820:430)+'px">';
+    h+='<div class="spec" style="'+lift(t,0.18,0.75,16)+'">'
+      +'<span class="v">'+esc(sc.value)+'</span>'
+      +'<span class="u">'+esc(sc.unit)+'</span></div>';
+    if(sc.note) h+='<div class="spec-note" style="'+lift(t,0.8,0.65,10)+'">'+esc(sc.note)+'</div>';
+    h+='</div>';
+    return h;
+  },
+
+  // 마무리 카드
+  logo:function(sc,t){
+    var h='<div class="mid logo" style="top:460px;'+lift(t,0.18,0.85,16)+'">'+esc(sc.text);
+    if(sc.tag) h+='<span class="tag" style="'+lift(t,0.85,0.65,10)+'">'+esc(sc.tag)+'</span>';
+    h+='</div>';
+    return h;
+  },
+
+  // 검은 화면 — 전환에 한 번씩
+  blackout:function(sc,t){
+    document.getElementById('stage').classList.add('dark');
+    if(!sc.text) return '';
+    return '<div class="mid word" style="top:470px;'+lift(t,0.2,0.8,16)+'">'+esc(sc.text)+'</div>';
+  }
+};
+
+window.renderFrame=function(sc,t,fadeIn,fadeOut){
+  var fn=LAYOUT[sc.layout];
+  if(!fn) throw new Error('unknown layout: '+sc.layout);
+  var stage=document.getElementById('stage');
+  stage.classList.remove('dark');
+  document.getElementById('content').innerHTML=fn(sc,t);
+  var o=1;
+  if(fadeIn>0)  o=Math.min(o, easeInOut(t/fadeIn));
+  if(fadeOut>0) o=Math.min(o, easeInOut((sc.__dur-t)/fadeOut));
+  stage.style.opacity=o.toFixed(4);
+  return true;
+};
+window.__ready=true;
+</script>
+</body>
+</html>

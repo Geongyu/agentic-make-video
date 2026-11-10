@@ -1,0 +1,217 @@
+<!doctype html>
+<!--
+  영상 프레임 렌더러.
+
+  build.py 가 Playwright 로 이 페이지를 띄우고 window.renderFrame(scene, t) 을 호출한 뒤
+  스크린샷을 찍는다. 애니메이션은 전부 t 로부터 계산해 그리므로 프레임이 결정적이다.
+  (CSS 애니메이션을 쓰면 캡처 시점마다 결과가 달라진다.)
+-->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>frame</title>
+<style>
+:root{
+  --bg:#07070B;
+  --fg:#FFFFFF;
+  --dim:#9AA0AE;
+  --faint:#5B6170;
+  --amber:#FBBF24;
+  --red:#F87171;
+  --emerald:#34D399;
+  --cream:#F5F1E8;
+  --font:"Pretendard Variable", Pretendard, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1920px;height:1080px;overflow:hidden;background:var(--bg)}
+body{font-family:var(--font);color:var(--fg);-webkit-font-smoothing:antialiased}
+
+#stage{position:relative;width:1920px;height:1080px;overflow:hidden}
+
+/* 필름 그레인 — 검은 화면이 죽지 않게 아주 옅게 */
+#grain{
+  position:absolute;inset:0;pointer-events:none;opacity:.035;mix-blend-mode:screen;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");
+}
+/* 비네트 */
+#vig{position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 45%, rgba(0,0,0,.55) 100%)}
+
+.full{position:absolute;inset:0;overflow:hidden}
+.full img{width:1920px;height:1080px;object-fit:cover;display:block;
+  filter:saturate(.75) contrast(1.06) brightness(.58)}
+.full::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(180deg, rgba(7,7,11,.5) 0%, rgba(7,7,11,.14) 34%, rgba(7,7,11,.68) 76%, rgba(7,7,11,.94) 100%)}
+
+.band{position:absolute;left:0;width:1920px;overflow:hidden}
+.band img{width:100%;display:block;filter:saturate(.85) contrast(1.06) brightness(1.0)}
+.band::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(180deg, rgba(7,7,11,.78) 0%, rgba(7,7,11,0) 26%, rgba(7,7,11,0) 62%, rgba(7,7,11,.97) 100%)}
+
+.dateline{position:absolute;left:150px;display:flex;align-items:baseline;gap:34px}
+.dateline .d{font-size:172px;font-weight:800;letter-spacing:-3px;color:var(--cream);line-height:1}
+.dateline .p{font-size:68px;font-weight:700;color:var(--cream);opacity:.92}
+
+.line{position:absolute;left:150px;width:1620px;font-size:60px;line-height:1.5;font-weight:500;color:var(--dim)}
+.line em{font-style:normal;font-weight:800;color:var(--fg)}
+.line em.red{color:var(--red)}
+.line em.amber{color:var(--amber)}
+.line em.emerald{color:var(--emerald)}
+.line .sub{display:block;margin-top:14px}
+
+.num{position:absolute;left:150px}
+.num .top{font-size:42px;font-weight:500;color:var(--dim);margin-bottom:12px}
+.num .v{font-size:218px;font-weight:800;letter-spacing:-6px;line-height:.95;color:var(--fg)}
+.num .v .u{font-size:72px;font-weight:700;letter-spacing:0;margin-left:14px;color:var(--amber)}
+.num .bot{font-size:50px;font-weight:800;color:var(--fg);margin-top:18px}
+
+.stmt{position:absolute;left:150px;width:1620px}
+.stmt .b{font-size:98px;font-weight:800;line-height:1.3;letter-spacing:-1.5px}
+.stmt .s{font-size:54px;font-weight:600;color:var(--dim);margin-top:24px}
+.stmt.emerald .b{color:var(--emerald)}
+.stmt.emerald .s{color:#A7F3D0}
+
+.breath{position:absolute;left:150px;font-size:38px;font-weight:600;color:var(--faint);letter-spacing:2px}
+
+.cap{position:absolute;left:150px;font-size:27px;font-weight:500;color:var(--faint);letter-spacing:.2px}
+
+.end{position:absolute;left:150px;width:1620px}
+.end .rule{width:92px;height:7px;background:var(--amber);border-radius:4px;margin-bottom:38px}
+.end .b{font-size:88px;font-weight:800;letter-spacing:-1.5px;line-height:1.25}
+.end .s{font-size:42px;font-weight:500;color:var(--dim);margin-top:22px;line-height:1.5}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="content"></div>
+  <div id="vig"></div>
+  <div id="grain"></div>
+</div>
+
+<script>
+// ---------------------------------------------------------------- 보간 도구
+
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+// 부드럽게 들어오는 곡선 (ease-out cubic)
+function ease(x){x=clamp(x,0,1);return 1-Math.pow(1-x,3)}
+
+// start 초에 dur 동안 나타난다. 0~1 진행도를 돌려준다.
+function appear(t,start,dur){return ease((t-start)/(dur||0.55))}
+
+// 나타나면서 살짝 위로 떠오르는 공통 모션
+function rise(t,start,dur,px){
+  var p=appear(t,start,dur);
+  return 'opacity:'+p.toFixed(4)+';transform:translateY('+((1-p)*(px===undefined?18:px)).toFixed(2)+'px)';
+}
+
+function esc(s){return (s===undefined||s===null)?'':String(s)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+// ---------------------------------------------------------------- 레이아웃
+
+function imageBand(sc,t){
+  if(!sc.image) return '';
+  // 아주 느린 줌 — 정지 화면이 살아 있게
+  var z=(1.045+t*0.006).toFixed(4);
+  var p=appear(t,0,1.1);
+  var focus=(sc.image_focus===undefined?45:sc.image_focus);
+
+  if(sc.image_mode==='full'){
+    // 시네마틱 스틸: 화면 전체에 깔고 어둡게 눌러 자막이 읽히게 한다
+    return '<div class="full" style="opacity:'+p.toFixed(3)+'">'
+         + '<img src="assets/'+esc(sc.image)+'" style="object-position:50% '+focus+'%;transform:scale('+z+')">'
+         + '</div>';
+  }
+  // 스크린샷: 증거로 보여 주는 것이므로 가로 띠로 또렷하게
+  return '<div class="band" style="top:196px;height:524px;opacity:'+(p*0.95).toFixed(3)+'">'
+       + '<img src="assets/'+esc(sc.image)+'" style="transform:scale('+z+');transform-origin:50% '+focus+'%">'
+       + '</div>';
+}
+
+function emHtml(sc){
+  var cls=sc.accent&&sc.accent!=='white'?' class="'+esc(sc.accent)+'"':'';
+  var out='';
+  if(sc.pre) out+=esc(sc.pre);
+  if(sc.em)  out+='<em'+cls+'>'+esc(sc.em)+'</em>';
+  if(sc.post)out+=esc(sc.post);
+  return out;
+}
+
+var LAYOUT={
+
+  dateline:function(sc,t){
+    return imageBand(sc,t)+'<div class="dateline" style="top:430px;'+rise(t,0,0.9,26)+'">'
+         + '<span class="d">'+esc(sc.big)+'</span>'
+         + '<span class="p" style="opacity:'+appear(t,0.45,0.7).toFixed(3)+'">'+esc(sc.place)+'</span>'
+         + '</div>';
+  },
+
+  line:function(sc,t){
+    var y=(sc.image&&sc.image_mode==='band')?812:452;
+    var h=imageBand(sc,t);
+    h+='<div class="line" style="top:'+y+'px;'+rise(t,sc.image?0.5:0.15,0.75)+'">'+emHtml(sc);
+    if(sc.sub) h+='<span class="sub" style="'+rise(t,(sc.image?0.5:0.15)+0.55,0.7,14)+'">'+esc(sc.sub)+'</span>';
+    h+='</div>';
+    if(sc.caption) h+='<div class="cap" style="top:'+(y+(sc.sub?180:110))+'px;opacity:'+(appear(t,1.1,0.8)*0.9).toFixed(3)+'">'+esc(sc.caption)+'</div>';
+    return h;
+  },
+
+  number:function(sc,t){
+    var h=imageBand(sc,t);
+    h+='<div class="num" style="top:338px">';
+    h+='<div class="top" style="'+rise(t,0.1,0.6,12)+'">'+esc(sc.top)+'</div>';
+    // 숫자는 살짝 늦게, 조금 더 크게 들어온다 — 이 포맷의 핵심 비트
+    var p=appear(t,0.55,0.8);
+    h+='<div class="v" style="opacity:'+p.toFixed(4)+';transform:translateY('+((1-p)*26).toFixed(2)+'px) scale('+(0.965+p*0.035).toFixed(4)+');transform-origin:0% 60%">'
+      + esc(sc.value)+'<span class="u">'+esc(sc.unit)+'</span></div>';
+    if(sc.bottom) h+='<div class="bot" style="'+rise(t,1.15,0.7,14)+'">'+esc(sc.bottom)+'</div>';
+    h+='</div>';
+    if(sc.caption) h+='<div class="cap" style="top:'+(sc.bottom?760:700)+'px;opacity:'+(appear(t,1.6,0.8)*0.9).toFixed(3)+'">'+esc(sc.caption)+'</div>';
+    return h;
+  },
+
+  statement:function(sc,t){
+    var cls='stmt'+(sc.accent==='emerald'?' emerald':'');
+    var h=imageBand(sc,t);
+    h+='<div class="'+cls+'" style="top:'+(sc.sub?414:462)+'px">';
+    h+='<div class="b" style="'+rise(t,0.15,0.9,22)+'">'+esc(sc.big)+'</div>';
+    if(sc.sub) h+='<div class="s" style="'+rise(t,0.9,0.8,16)+'">'+esc(sc.sub)+'</div>';
+    h+='</div>';
+    return h;
+  },
+
+  breath:function(sc,t){
+    // 거의 비어 있는 화면. 숨 쉬는 구간.
+    var p=appear(t,0.3,1.0)*0.8;
+    return '<div class="breath" style="top:520px;opacity:'+p.toFixed(3)+'">'+esc(sc.small)+'</div>';
+  },
+
+  endcard:function(sc,t){
+    var h='<div class="end" style="top:390px">';
+    h+='<div class="rule" style="'+rise(t,0.1,0.7,0)+'"></div>';
+    h+='<div class="b" style="'+rise(t,0.4,0.9,20)+'">'+esc(sc.big)+'</div>';
+    h+='<div class="s" style="'+rise(t,1.0,0.8,16)+'">'+esc(sc.sub)+'</div>';
+    h+='</div>';
+    if(sc.caption) h+='<div class="cap" style="top:760px;opacity:'+(appear(t,1.7,0.9)*0.9).toFixed(3)+'">'+esc(sc.caption)+'</div>';
+    return h;
+  }
+};
+
+// ---------------------------------------------------------------- 진입점
+
+window.renderFrame=function(sc,t,fadeIn,fadeOut){
+  var fn=LAYOUT[sc.layout];
+  if(!fn) throw new Error('unknown layout: '+sc.layout);
+  document.getElementById('content').innerHTML=fn(sc,t);
+  // 장면 단위 디졸브
+  var o=1;
+  if(fadeIn>0)  o=Math.min(o, ease(t/fadeIn));
+  if(fadeOut>0) o=Math.min(o, ease((sc.__dur-t)/fadeOut));
+  document.getElementById('stage').style.opacity=o.toFixed(4);
+  return true;
+};
+
+window.__ready=true;
+</script>
+</body>
+</html>

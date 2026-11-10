@@ -1,0 +1,31 @@
+# 작업 산출물
+work/build_*/
+work/output/
+work/_*.md
+work/*.json
+
+# 생성 이미지 — 용량이 크고 사용자마다 다르다
+assets/*.jpg
+assets/*.jpeg
+assets/*.png
+!assets/.gitkeep
+
+# 음원 — 저작권이 사용자마다 다르다
+music/*
+!music/README.md
+!music/.gitkeep
+
+# 비밀
+.env
+work/.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
